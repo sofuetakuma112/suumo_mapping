@@ -47,6 +47,8 @@ const getRandomFloat = (max: number = 1) => {
 
 function App() {
   const [url, setUrl] = useState("");
+  const [centerAddress, setCenterAddress] = useState("愛媛県松山市三番町5丁目");
+  const [distance, setDistance] = useState("2000");
   const [rentalInfos, setRentalInfos] = useState<RentalInfo[]>([]);
   const [showLoading, setShowLoading] = useState(false);
   const [showMap, setShowMap] = useState(false);
@@ -54,10 +56,13 @@ function App() {
 
   const sendUrl = async () => {
     if (!url || !checkValidURL(url)) return;
+    if (isNaN(Number(distance))) return;
     setShowLoading(true);
     const rentalInfos = await axios
       .post(`http://localhost:3001/api/mapping`, {
-        data: url,
+        url,
+        centerAddress,
+        distance,
       })
       .then((res) => res.data.data);
     // 各locationのjson配列を作成する
@@ -82,7 +87,6 @@ function App() {
         let newlocation = {};
         if (duplicatedlocations_json.includes(JSON.stringify(location))) {
           // 座標が完全に一致しているので微妙にずらす
-          console.log("duplicate: ", location);
           newlocation = {
             lat: location.lat + getRandomFloat(0.002),
             lng: location.lng + getRandomFloat(0.002),
@@ -96,7 +100,6 @@ function App() {
         };
       }
     );
-    console.log(duplicateRentalInfoslocationAvoided);
     setRentalInfos(duplicateRentalInfoslocationAvoided);
     setShowLoading(false);
     setShowMap((oldState) => !oldState);
@@ -111,9 +114,11 @@ function App() {
   return (
     <div className="App">
       {showLoading ? (
-        <div className="flex justify-center">
-          <div className="animate-spin h-10 w-10 border-4 border-blue-500 rounded-full border-t-transparent"></div>
-        </div>
+        <>
+          <div className="flex justify-center items-center h-full">
+            <div className="animate-spin h-10 w-10 border-4 border-blue-500 rounded-full border-t-transparent"></div>
+          </div>
+        </>
       ) : showMap ? (
         <>
           {/* center は最初に表示される中心の座標で、zoom はズームレベル（標準的には1～18程度） */}
@@ -171,19 +176,39 @@ function App() {
         </>
       ) : (
         <div className="bg-[url('../public/bg.jpg')] bg-cover bg-center h-full flex justify-center">
-          <input
-            type="text"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="URL"
-            className="w-2/3 bg-gray-50 text-gray-800 border ring-indigo-300 rounded outline-none transition duration-100 px-3 py-2 mr-5 h-10 my-auto"
-          />
-          <button
-            onClick={sendUrl}
-            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded h-10 my-auto"
-          >
-            マッピングする
-          </button>
+          <div className="my-auto w-2/3">
+            <div className="flex flex-col">
+              <input
+                type="text"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="URL"
+                className="w-full bg-gray-50 text-gray-800 border ring-indigo-300 rounded outline-none transition duration-100 px-3 py-2 mr-5 h-10 mb-5"
+              />
+              <div className="flex">
+                <input
+                  type="text"
+                  value={centerAddress}
+                  onChange={(e) => setCenterAddress(e.target.value)}
+                  placeholder="中心地点"
+                  className="w-full bg-gray-50 text-gray-800 border ring-indigo-300 rounded outline-none transition duration-100 px-3 py-2 mr-5 h-10 mb-5"
+                />
+                <input
+                  type="text"
+                  value={distance}
+                  onChange={(e) => setDistance(e.target.value)}
+                  placeholder="距離"
+                  className="w-full bg-gray-50 text-gray-800 border ring-indigo-300 rounded outline-none transition duration-100 px-3 py-2 mr-5 h-10 mb-5"
+                />
+              </div>
+            </div>
+            <button
+              onClick={sendUrl}
+              className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded h-10"
+            >
+              マッピングする
+            </button>
+          </div>
         </div>
       )}
     </div>

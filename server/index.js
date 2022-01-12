@@ -19,14 +19,44 @@ const sleep = (ms) => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 };
 
+const R = Math.PI / 180;
+const calcDistance = (lat1, lng1, lat2, lng2) => {
+  lat1 *= R;
+  lng1 *= R;
+  lat2 *= R;
+  lng2 *= R;
+  return (
+    6371 *
+    Math.acos(
+      Math.cos(lat1) * Math.cos(lat2) * Math.cos(lng2 - lng1) +
+        Math.sin(lat1) * Math.sin(lat2)
+    )
+  );
+};
+
+const getLocation = async (address) => {
+  const makeUrl = "https://msearch.gsi.go.jp/address-search/AddressSearch";
+  const encodedURI = encodeURI(`${makeUrl}?q=${address}`);
+  console.log("地理院APIにリクエスト送信");
+  const location_array = await axios
+    .get(encodedURI)
+    .then((response) => response.data[0].geometry.coordinates);
+  return { lng: location_array[0], lat: location_array[1] };
+};
+
 app.post("/api/mapping", async (req, res, next) => {
-  if (!req.body.data) {
+  if (Object.keys(req.body).length === 0) {
     res.status(200);
     return;
   }
   const startTime = performance.now(); // 開始時間
 
-  const url = req.body.data;
+  const url = req.body.url;
+  const centerAddress = req.body.centerAddress;
+  const distance_string = req.body.distance;
+
+  const centerLocation = await getLocation(centerAddress);
+  const distance = Number(distance_string);
 
   const options = {
     headless: true,
@@ -34,7 +64,6 @@ app.post("/api/mapping", async (req, res, next) => {
   const browser = await puppeteer.launch(options);
   const page = await browser.newPage();
   await page.goto(url);
-  console.log("loading page ...");
   await sleep(3000);
 
   const getTextContentFromElemHandler = async (elementHandle) => {
@@ -47,6 +76,12 @@ app.post("/api/mapping", async (req, res, next) => {
     return hrefProperty.jsonValue();
   };
 
+  const getSrcFromElemHandler = async (elementHandle) => {
+    const srcProperty = await elementHandle.getProperty("src");
+    return srcProperty.jsonValue();
+  };
+
+  const map = new Map();
   const extractInfoFromSinglePage = async (page) => {
     const elems = await page.$$("ul.l-cassetteitem > li");
 
@@ -64,7 +99,13 @@ app.post("/api/mapping", async (req, res, next) => {
       const detailUrl = await getHrefFromElemHandler(detailUrlElemHandler);
 
       // 画像URL
-      const imgSrc = await elem.$eval("img.js-linkImage", (el) => el.src);
+      let imgSrc = "";
+      try {
+        const imgElemHandler = await elem.$(".js-linkImage");
+        imgSrc = await getSrcFromElemHandler(imgElemHandler);
+      } catch (error) {
+        imgSrc = "";
+      }
 
       // タイトル
       const titleElemHandler = await elem.$("div.cassetteitem_content-title");
@@ -96,40 +137,50 @@ app.post("/api/mapping", async (req, res, next) => {
 
       // 間取り
       const planOfHouseElemHandler = await elem.$(".cassetteitem_madori");
-      const planOfHouse = await getTextContentFromElemHandler(planOfHouseElemHandler);
+      const planOfHouse = await getTextContentFromElemHandler(
+        planOfHouseElemHandler
+      );
 
       // 面積
       const areaElemHandler = await elem.$(".cassetteitem_menseki");
       const area = await getTextContentFromElemHandler(areaElemHandler);
 
-      // 座標
-      const makeUrl = "https://msearch.gsi.go.jp/address-search/AddressSearch";
-      // const makeUrl_gas =
-      //   "https://script.google.com/macros/s/AKfycbykhu8tYWMeQRuCvctpOc9yEi0N7goZLZChROAdMEKVuecYau0WLGWLAAlj3SEwPz8G/exec";
-      const encodedURI = encodeURI(`${makeUrl}?q=${address}`);
-      console.log('地理院地図の地名検索APIにリクエスト送信')
-      const location_array = await axios
-        .get(encodedURI)
-        // .then((res) => res.data.geometry.location);
-        .then((response) => response.data[0].geometry.coordinates);
-      const location = { lng: location_array[0], lat: location_array[1] };
+      let location = {};
+      const found_location = map.get(address); // なければundefinedが返ってくる
+      if (found_location) {
+        location = found_location;
+      } else {
+        // 座標
+        location = await getLocation(address);
+        map.set(address, location);
+        await sleep(1000);
+      }
 
-      propertyInfos.push({
-        stairs,
-        detailUrl,
-        imgSrc,
-        title,
-        address,
-        location,
-        rent,
-        administrativeExpenses,
-        deposit,
-        gratuity,
-        planOfHouse,
-        area,
-      });
-
-      await sleep(1000);
+      if (
+        calcDistance(
+          centerLocation.lat,
+          centerLocation.lng,
+          location.lat,
+          location.lng
+        ) *
+          1000 <
+        distance
+      ) {
+        propertyInfos.push({
+          stairs,
+          detailUrl,
+          imgSrc,
+          title,
+          address,
+          location,
+          rent,
+          administrativeExpenses,
+          deposit,
+          gratuity,
+          planOfHouse,
+          area,
+        });
+      }
     }
 
     const navigationElemHandlers = await page.$$("p.pagination-parts > a");
@@ -145,16 +196,19 @@ app.post("/api/mapping", async (req, res, next) => {
   };
 
   let propertyInfos = [];
+  let currentPageNum = 1;
   while (true) {
     // 現在のページから物件情報を抽出する
-    console.log("現在のページから物件情報を抽出する");
+    console.log(`${currentPageNum}ページ: 物件情報を抽出する`);
     const [propertyInfosPerPage, nextElemHandler] =
       await extractInfoFromSinglePage(page);
     propertyInfos = [...propertyInfos, ...propertyInfosPerPage];
     if (nextElemHandler) {
       console.log("次へをクリック");
       nextElemHandler.click();
-      await sleep(1500);
+      currentPageNum += 1;
+      // https://qiita.com/monaka_ben_mezd/items/4cb6191458b2d7af0cf7
+      await page.waitForNavigation({ waitUntil: ["load", "networkidle2"] });
     } else break;
   }
 
