@@ -66,7 +66,7 @@ const getLocationByYolp = async (address) => {
     .get(encodedURI)
     .then((response) => parseXml(response.data));
 
-  return { lng: location_array[0], lat: location_array[1] };
+  return { lng: Number(location_array[0]), lat: Number(location_array[1]) };
 };
 
 app.post("/api/mapping", async (req, res, next) => {
@@ -88,6 +88,11 @@ app.post("/api/mapping", async (req, res, next) => {
   };
   const browser = await puppeteer.launch(options);
   const page = await browser.newPage();
+
+  const userAgent =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36";
+  page.setUserAgent(userAgent);
+
   page.setDefaultNavigationTimeout(0);
   await page.goto(url);
   await sleep(3000);
@@ -213,6 +218,7 @@ app.post("/api/mapping", async (req, res, next) => {
         } else return null;
       })
     );
+    console.log(`物件数: ${elems.length}件 `);
     const propertyInfos = propertyInfosWithNull.filter((item) => item);
 
     const navigationElemHandlers = await page.$$("p.pagination-parts > a");
@@ -237,12 +243,17 @@ app.post("/api/mapping", async (req, res, next) => {
     propertyInfos = [...propertyInfos, ...propertyInfosPerPage];
     if (nextElemHandler) {
       console.log("次へをクリック");
-      await sleep(1000);
+      let div_selector_to_remove = "#js-bannerPanel";
+      await page.evaluate((sel) => {
+        const elements = document.querySelectorAll(sel);
+        console.log(`elements: ${elements.length}`)
+        elements.forEach((element) => element.parentNode.removeChild(element));
+      }, div_selector_to_remove);
       nextElemHandler.click();
       currentPageNum += 1;
       // https://qiita.com/monaka_ben_mezd/items/4cb6191458b2d7af0cf7
       // await page.waitForNavigation({ waitUntil: ["load", "networkidle2"] });
-      await sleep(8000);
+      await sleep(5000);
     } else break;
   }
 
