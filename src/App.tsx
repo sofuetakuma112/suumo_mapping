@@ -47,7 +47,7 @@ const getRandomFloat = (max: number = 1) => {
 
 function App() {
   const [url, setUrl] = useState("");
-  const [centerAddress, setCenterAddress] = useState("愛媛県松山市三番町5丁目");
+  const [centerAddress, setCenterAddress] = useState("東京都八王子市館町815-1");
   const [distance, setDistance] = useState("2000");
   const [rentalInfos, setRentalInfos] = useState<RentalInfo[]>([]);
   const [showLoading, setShowLoading] = useState(false);
