@@ -141,8 +141,19 @@ function App() {
     <div className="App">
       {showLoading ? (
         <>
-          <div className="flex justify-center items-center h-full">
-            <div className="animate-spin h-10 w-10 border-4 border-blue-500 rounded-full border-t-transparent"></div>
+          <div className="flex flex-col justify-center items-center h-full">
+            <div className="mb-1 text-lg font-medium dark:text-white .text-center mb-4">
+              物件情報をマッピング中...
+            </div>
+            <div className="animate-spin h-10 w-10 border-4 border-blue-500 rounded-full border-t-transparent mb-8"></div>
+            <div className="w-full px-[5%]">
+              <div className="w-full bg-gray-200 rounded-full h-4 dark:bg-gray-700">
+                <div
+                  className="bg-blue-600 h-4 rounded-full"
+                  style={{ width: `${progress}%` }}
+                ></div>
+              </div>
+            </div>
           </div>
         </>
       ) : showMap ? (
