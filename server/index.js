@@ -3,22 +3,24 @@ import puppeteer from "puppeteer";
 import express from "express";
 import http from "http";
 import cors from "cors";
+import dotenv from "dotenv";
 import axios from "axios";
 import xml2js from "xml2js";
+import { Client } from "@googlemaps/google-maps-services-js";
 import mongoose from "mongoose";
 import { Coordinate } from "./models/coordinate.js";
+import { countSpaces } from "./modules/util.js";
 import { Server } from "socket.io";
-// mongooseのデフォルト接続を設定する
-const mongoDB = "mongodb://127.0.0.1/coordinates";
+const mongoDB = "mongodb://127.0.0.1/coordinates"; // mongooseのデフォルト接続を設定する
 mongoose.connect(mongoDB);
-// Mongoose にグローバルプロミスライブラリを使わせる
-mongoose.Promise = global.Promise;
-// デフォルトの接続を取得する
-const db = mongoose.connection;
+mongoose.Promise = global.Promise; // Mongoose にグローバルプロミスライブラリを使わせる
+const db = mongoose.connection; // デフォルトの接続を取得する
 
 // 接続をエラーイベントにバインドする(接続エラーの通知を受ける)
 db.on("error", console.error.bind(console, "MongoDB connection error:"));
 db.once("open", () => console.log("DB connection successful"));
+
+dotenv.config();
 
 const app = express();
 app.use(cors());
@@ -78,8 +80,7 @@ const parseXml = (xml) => {
 };
 
 const getLocationByYolp = async (address) => {
-  const makeUrl =
-    "https://map.yahooapis.jp/geocode/V1/geoCoder?appid=dj00aiZpPTRaTTViSEo1NjdFdSZzPWNvbnN1bWVyc2VjcmV0Jng9ZGM-";
+  const makeUrl = `https://map.yahooapis.jp/geocode/V1/geoCoder?appid=${process.env.YOLP_API_KEY}`;
   const encodedURI = encodeURI(`${makeUrl}&query=${address}`);
   // console.log("YOLPにリクエスト送信");
   const location_array = await axios
@@ -87,6 +88,30 @@ const getLocationByYolp = async (address) => {
     .then((response) => parseXml(response.data));
 
   return { lng: Number(location_array[0]), lat: Number(location_array[1]) };
+};
+
+const client = new Client({});
+const getLocationByGoogleMaps = async (address) => {
+  const res = await client
+    .geocode({
+      params: {
+        address,
+        key: process.env.GOOGLE_MAPS_API_KEY,
+      },
+      timeout: 1000, // milliseconds
+    })
+    .then((res) => {
+      return res;
+    })
+    .catch((e) => {
+      console.log(e.response.data.error_message);
+    });
+
+  const placeId = res.data.results[0].place_id;
+  const formattedAddress = res.data.results[0].formatted_address;
+  const location = res.data.results[0].geometry.location;
+
+  return location;
 };
 
 app.post("/api/mapping", async (req, res, next) => {
@@ -171,6 +196,11 @@ app.post("/api/mapping", async (req, res, next) => {
         const titleElemHandler = await elem.$("div.cassetteitem_content-title");
         const title = await getTextContentFromElemHandler(titleElemHandler);
 
+        if (countSpaces(title) > 1) {
+          console.log(`不正なタイトル: ${title}`);
+          return null;
+        }
+
         // 住所
         const addressElemHandler = await elem.$(".cassetteitem_detail-col1");
         const address = await getTextContentFromElemHandler(addressElemHandler);
@@ -209,9 +239,12 @@ app.post("/api/mapping", async (req, res, next) => {
         const areaElemHandler = await elem.$(".cassetteitem_menseki");
         const area = await getTextContentFromElemHandler(areaElemHandler);
 
+        const addressAndBuildingName = `${address}${title}`;
         let location = {};
         // mongodbに問い合わせる
-        const found_coordinate = await Coordinate.find({ address });
+        const found_coordinate = await Coordinate.find({
+          address: addressAndBuildingName,
+        });
         if (found_coordinate.length > 0) {
           location = {
             lng: found_coordinate[0].lng,
@@ -219,11 +252,11 @@ app.post("/api/mapping", async (req, res, next) => {
           };
         } else {
           // 座標
-          location = await getLocationByYolp(address);
-          console.log("YOLP APIを使用");
+          location = await getLocationByGoogleMaps(addressAndBuildingName);
+          console.log("Google Map APIを使用");
           // mongodbに保存
           const coordinate = new Coordinate({
-            address,
+            address: addressAndBuildingName,
             lng: location.lng,
             lat: location.lat,
           });

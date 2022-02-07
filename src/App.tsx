@@ -142,7 +142,7 @@ function App() {
       {showLoading ? (
         <>
           <div className="flex flex-col justify-center items-center h-full">
-            <div className="mb-1 text-lg font-medium dark:text-white .text-center mb-4">
+            <div className="mb-1 text-lg font-medium dark:text-white text-center mb-4">
               物件情報をマッピング中...
             </div>
             <div className="animate-spin h-10 w-10 border-4 border-blue-500 rounded-full border-t-transparent mb-8"></div>
