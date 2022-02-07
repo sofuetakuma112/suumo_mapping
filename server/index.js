@@ -4,13 +4,27 @@ import express from "express";
 import cors from "cors";
 import axios from "axios";
 import xml2js from "xml2js";
-var app = express();
+import mongoose from "mongoose";
+import { Coordinate } from "./models/coordinate.js";
+// mongooseのデフォルト接続を設定する
+const mongoDB = "mongodb://127.0.0.1/coordinates";
+mongoose.connect(mongoDB);
+// Mongoose にグローバルプロミスライブラリを使わせる
+mongoose.Promise = global.Promise;
+// デフォルトの接続を取得する
+const db = mongoose.connection;
+
+// 接続をエラーイベントにバインドする(接続エラーの通知を受ける)
+db.on("error", console.error.bind(console, "MongoDB connection error:"));
+db.once("open", () => console.log("DB connection successful"));
+
+const app = express();
 
 app.use(cors());
 app.use(express.json()); // body-parser settings
 
 /* 2. listen()メソッドを実行して3000番ポートで待ち受け。*/
-var server = app.listen(3001, function () {
+const server = app.listen(3001, function () {
   console.log("Node.js is listening to PORT:" + server.address().port);
 });
 
@@ -112,7 +126,6 @@ app.post("/api/mapping", async (req, res, next) => {
     return srcProperty.jsonValue();
   };
 
-  const map = new Map();
   const extractInfoFromSinglePage = async (page) => {
     const elems = await page.$$("ul.l-cassetteitem > li");
 
@@ -181,14 +194,24 @@ app.post("/api/mapping", async (req, res, next) => {
         const area = await getTextContentFromElemHandler(areaElemHandler);
 
         let location = {};
-        const found_location = map.get(address); // なければundefinedが返ってくる
-        if (found_location) {
-          location = found_location;
+        // mongodbに問い合わせる
+        const found_coordinate = await Coordinate.find({ address });
+        if (found_coordinate.length > 0) {
+          location = {
+            lng: found_coordinate[0].lng,
+            lat: found_coordinate[0].lat,
+          };
         } else {
           // 座標
           location = await getLocationByYolp(address);
-          // console.log(address, location);
-          map.set(address, location);
+          console.log("YOLP APIを使用");
+          // mongodbに保存
+          const coordinate = new Coordinate({
+            address,
+            lng: location.lng,
+            lat: location.lat,
+          });
+          await coordinate.save();
         }
 
         if (
@@ -246,14 +269,14 @@ app.post("/api/mapping", async (req, res, next) => {
       let div_selector_to_remove = "#js-bannerPanel";
       await page.evaluate((sel) => {
         const elements = document.querySelectorAll(sel);
-        console.log(`elements: ${elements.length}`)
+        console.log(`elements: ${elements.length}`);
         elements.forEach((element) => element.parentNode.removeChild(element));
       }, div_selector_to_remove);
       nextElemHandler.click();
       currentPageNum += 1;
       // https://qiita.com/monaka_ben_mezd/items/4cb6191458b2d7af0cf7
-      // await page.waitForNavigation({ waitUntil: ["load", "networkidle2"] });
-      await sleep(5000);
+      await page.waitForNavigation({ waitUntil: ["load", "networkidle2"] });
+      // await sleep(5000);
     } else break;
   }
 
