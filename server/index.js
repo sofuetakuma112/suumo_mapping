@@ -1,11 +1,13 @@
 /* 1. expressモジュールをロードし、インスタンス化してappに代入。*/
 import puppeteer from "puppeteer";
 import express from "express";
+import http from "http";
 import cors from "cors";
 import axios from "axios";
 import xml2js from "xml2js";
 import mongoose from "mongoose";
 import { Coordinate } from "./models/coordinate.js";
+import { Server } from "socket.io";
 // mongooseのデフォルト接続を設定する
 const mongoDB = "mongodb://127.0.0.1/coordinates";
 mongoose.connect(mongoDB);
@@ -19,14 +21,18 @@ db.on("error", console.error.bind(console, "MongoDB connection error:"));
 db.once("open", () => console.log("DB connection successful"));
 
 const app = express();
-
 app.use(cors());
 app.use(express.json()); // body-parser settings
 
-/* 2. listen()メソッドを実行して3000番ポートで待ち受け。*/
-const server = app.listen(3001, function () {
-  console.log("Node.js is listening to PORT:" + server.address().port);
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+  },
 });
+
+server.listen(3001);
 
 /* 3. 以後、アプリケーション固有の処理 */
 
@@ -93,6 +99,7 @@ app.post("/api/mapping", async (req, res, next) => {
   const url = req.body.url;
   const centerAddress = req.body.centerAddress;
   const distance_string = req.body.distance;
+  const socketId = req.body.socketId;
 
   const centerLocation = await getLocationByYolp(centerAddress);
   const distance = Number(distance_string);
@@ -125,6 +132,15 @@ app.post("/api/mapping", async (req, res, next) => {
     const srcProperty = await elementHandle.getProperty("src");
     return srcProperty.jsonValue();
   };
+
+  // トータルのページ数を取得する
+  const navigationElemHandlers = await page.$$("ol.pagination-parts > li > a");
+  const totalPageLength = await getTextContentFromElemHandler(
+    navigationElemHandlers[navigationElemHandlers.length - 1]
+  );
+  // for (const elem of navigationElemHandlers) {
+  //   console.log(totalPageLength);
+  // }
 
   const extractInfoFromSinglePage = async (page) => {
     const elems = await page.$$("ul.l-cassetteitem > li");
@@ -244,6 +260,7 @@ app.post("/api/mapping", async (req, res, next) => {
     console.log(`物件数: ${elems.length}件 `);
     const propertyInfos = propertyInfosWithNull.filter((item) => item);
 
+    // 次へボタンを探す
     const navigationElemHandlers = await page.$$("p.pagination-parts > a");
     let nextElemHandler = null;
     for await (const navElemHandler of navigationElemHandlers) {
@@ -264,6 +281,10 @@ app.post("/api/mapping", async (req, res, next) => {
     const [propertyInfosPerPage, nextElemHandler] =
       await extractInfoFromSinglePage(page);
     propertyInfos = [...propertyInfos, ...propertyInfosPerPage];
+    io.to(socketId).emit(
+      "progress",
+      (currentPageNum * 100) / Number(totalPageLength)
+    );
     if (nextElemHandler) {
       console.log("次へをクリック");
       let div_selector_to_remove = "#js-bannerPanel";

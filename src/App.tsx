@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
+import { io } from "socket.io-client";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import { LatLng } from "leaflet";
 import "leaflet/dist/leaflet.css"; //  Leaflet デフォルトのスタイルを指定しているもので、これがないと表示が崩れる
@@ -53,57 +54,82 @@ function App() {
   const [showLoading, setShowLoading] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [position, setPosition] = useState<LatLng>(new LatLng(35.68, 139.76)); // 初期表示する緯度と経度を指定
+  const [progress, setProgress] = useState<number>(0);
+  // const [clientIo, setClientIo] = useState<any>(null);
 
   const sendUrl = async () => {
     if (!url || !checkValidURL(url)) return;
     if (isNaN(Number(distance))) return;
     setShowLoading(true);
-    const rentalInfos = await axios
-      .post(`http://localhost:3001/api/mapping`, {
-        url,
-        centerAddress,
-        distance,
-      })
-      .then((res) => res.data.data);
-    // 各locationのjson配列を作成する
-    const locations_json: string[] = rentalInfos.map((r: RentalInfo) =>
-      JSON.stringify(r.location)
-    );
-    // locationのjson配列から重複するものを抽出する
-    const duplicatedlocations_json = Array.from(
-      new Set(
-        rentalInfos
-          .filter(
-            (rentalInfo: RentalInfo, i: number) =>
-              locations_json.indexOf(JSON.stringify(rentalInfo.location)) !==
-              locations_json.lastIndexOf(JSON.stringify(rentalInfo.location))
-          )
-          .map((rentalInfo: RentalInfo) => JSON.stringify(rentalInfo.location))
-      )
-    );
-    const duplicateRentalInfoslocationAvoided = rentalInfos.map(
-      (rentalInfo: RentalInfo) => {
-        const location = rentalInfo.location;
-        let newlocation = {};
-        if (duplicatedlocations_json.includes(JSON.stringify(location))) {
-          // 座標が完全に一致しているので微妙にずらす
-          newlocation = {
-            lat: location.lat + getRandomFloat(0.002),
-            lng: location.lng + getRandomFloat(0.002),
+    const socket = io("http://localhost:3001");
+    // 進捗状況を受け取る
+    socket.on("progress", (progress) => {
+      console.log(`${progress} ％`);
+      setProgress(progress);
+    });
+    socket.on("connect", async () => {
+      const rentalInfos = await axios
+        .post(`http://localhost:3001/api/mapping`, {
+          url,
+          centerAddress,
+          distance,
+          socketId: socket.id,
+        })
+        .then((res) => res.data.data);
+      // 各locationのjson配列を作成する
+      const locations_json: string[] = rentalInfos.map((r: RentalInfo) =>
+        JSON.stringify(r.location)
+      );
+      // locationのjson配列から重複するものを抽出する
+      const duplicatedlocations_json = Array.from(
+        new Set(
+          rentalInfos
+            .filter(
+              (rentalInfo: RentalInfo, i: number) =>
+                locations_json.indexOf(JSON.stringify(rentalInfo.location)) !==
+                locations_json.lastIndexOf(JSON.stringify(rentalInfo.location))
+            )
+            .map((rentalInfo: RentalInfo) =>
+              JSON.stringify(rentalInfo.location)
+            )
+        )
+      );
+      const duplicateRentalInfoslocationAvoided = rentalInfos.map(
+        (rentalInfo: RentalInfo) => {
+          const location = rentalInfo.location;
+          let newlocation = {};
+          if (duplicatedlocations_json.includes(JSON.stringify(location))) {
+            // 座標が完全に一致しているので微妙にずらす
+            newlocation = {
+              lat: location.lat + getRandomFloat(0.002),
+              lng: location.lng + getRandomFloat(0.002),
+            };
+          } else {
+            newlocation = location;
+          }
+          return {
+            ...rentalInfo,
+            location: newlocation,
           };
-        } else {
-          newlocation = location;
         }
-        return {
-          ...rentalInfo,
-          location: newlocation,
-        };
-      }
-    );
-    setRentalInfos(duplicateRentalInfoslocationAvoided);
-    setShowLoading(false);
-    setShowMap((oldState) => !oldState);
+      );
+      setRentalInfos(duplicateRentalInfoslocationAvoided);
+      setShowLoading(false);
+      setShowMap((oldState) => !oldState);
+      socket.disconnect();
+    });
   };
+
+  // useEffect(() => {
+  //   const socket = io("http://localhost:3001");
+  //   socket.on("progress", (progress) => {
+  //     console.log("Recieved: " + progress);
+  //     setProgress(progress);
+  //   });
+  //   socket.on("connect", () => {
+  //     console.log(socket.id);
+  //   });
+  // }, []);
 
   useEffect(() => {
     if (rentalInfos.length === 0) return;
