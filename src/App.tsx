@@ -61,27 +61,24 @@ function App() {
     if (!url || !checkValidURL(url)) return;
     if (isNaN(Number(distance))) return;
     setShowLoading(true);
-    const socket = io(
-      process.env.REACT_APP_PROTOCOL_AND_FQDN || "http://localhost:3001",
-      { transports: ["websocket"] }
-    );
+    const PORT = process.env.REACT_APP_PORT || 3001;
+    const PROTOCOL_AND_FQDN =
+      process.env.REACT_APP_PROTOCOL_AND_FQDN || "http://localhost";
+    const socket = io(`${PROTOCOL_AND_FQDN}:${PORT}`, {
+      transports: ["websocket"],
+    });
     // 進捗状況を受け取る
     socket.on("progress", (progress) => {
       setProgress(progress);
     });
     socket.on("connect", async () => {
       const rentalInfos = await axios
-        .post(
-          `${
-            process.env.REACT_APP_PROTOCOL_AND_FQDN || "http://localhost:3001"
-          }/api/mapping`,
-          {
-            url,
-            centerAddress,
-            distance,
-            socketId: socket.id,
-          }
-        )
+        .post(`${PROTOCOL_AND_FQDN}:${PORT}/api/mapping`, {
+          url,
+          centerAddress,
+          distance,
+          socketId: socket.id,
+        })
         .then((res) => res.data.data);
       // 各locationのjson配列を作成する
       const locations_json: string[] = rentalInfos.map((r: RentalInfo) =>
