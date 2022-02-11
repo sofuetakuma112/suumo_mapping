@@ -62,7 +62,8 @@ function App() {
     if (isNaN(Number(distance))) return;
     setShowLoading(true);
     const socket = io(
-      process.env.REACT_APP_PROTOCOL_AND_FQDN || "http://localhost:3001"
+      process.env.REACT_APP_PROTOCOL_AND_FQDN || "http://localhost:3001",
+      { transports: ["websocket"] }
     );
     // 進捗状況を受け取る
     socket.on("progress", (progress) => {
