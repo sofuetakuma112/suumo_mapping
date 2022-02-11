@@ -70,6 +70,7 @@ function App() {
       setProgress(progress);
     });
     socket.on("connect", async () => {
+      console.log('connect event')
       const rentalInfos = await axios
         .post(`${PROTOCOL_AND_FQDN}:${PORT}/api/mapping`, {
           url,
