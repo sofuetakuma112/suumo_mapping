@@ -64,9 +64,7 @@ function App() {
     const PORT = process.env.REACT_APP_PORT || 3001;
     const PROTOCOL_AND_FQDN =
       process.env.REACT_APP_PROTOCOL_AND_FQDN || "http://localhost";
-    const socket = io(`${PROTOCOL_AND_FQDN}:${PORT}`, {
-      transports: ["websocket"],
-    });
+    const socket = io(`${PROTOCOL_AND_FQDN}:${PORT}`);
     // 進捗状況を受け取る
     socket.on("progress", (progress) => {
       setProgress(progress);
